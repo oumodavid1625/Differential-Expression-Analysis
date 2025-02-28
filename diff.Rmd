@@ -1,0 +1,390 @@
+---
+title: "DEA"
+author: "Oumo David"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+# Differential Expression Analysis Using R
+
+Differential expression analysis is a widely used technique in bioinformatics to identify genes or features that are differentially expressed between two or more conditions (e.g., treated vs. untreated, diseased vs. healthy). 
+
+In this tutorial, we will walk through the steps of performing differential expression analysis using R, focusing on RNA-seq data.
+
+We will use the DESeq2 package, one of the most popular tools for differential expression analysis. This tutorial assumes you have basic knowledge of R and RNA-seq data.
+
+1. Install and Load Required Packages
+First, install and load the necessary R packages. If you haven't installed them yet, run the following commands:
+
+# Install Bioconductor (if not already installed)
+if (!require("BiocManager", quietly = TRUE))
+    install.packages("BiocManager")
+
+# Install DESeq2 and other necessary packages
+BiocManager::install("DESeq2")
+BiocManager::install("ggplot2")
+BiocManager::install("pheatmap")
+
+# Load the libraries
+
+```{R}
+library(DESeq2)
+library(ggplot2)
+library(pheatmap)
+
+```
+
+2. Prepare Your Data
+
+Differential expression analysis requires two main inputs:
+
+Count matrix: A table where rows represent genes and columns represent samples. Each value is the raw read count for a gene in a sample.
+
+Metadata: A table describing the experimental design, such as sample names, conditions, and other covariates.
+
+Example Data
+
+For this tutorial, we'll use a simulated dataset. Replace this with your own data in practice.
+
+# Example count matrix (genes as rows, samples as columns)
+
+```{r}
+count_data <- matrix(rnbinom(1000, mu=100, size=1/0.5), nrow=100, ncol=10)
+rownames(count_data) <- paste0("Gene_", 1:100)
+colnames(count_data) <- paste0("Sample_", 1:10)
+
+```
+
+# Example metadata (sample information)
+
+```{r}
+col_data <- data.frame(
+  condition = factor(rep(c("Control", "Treatment"), each=5)),
+  batch = factor(rep(c("Batch1", "Batch2"), times=5))
+)
+rownames(col_data) <- colnames(count_data)
+
+```
+
+3. Create a DESeqDataSet Object
+
+The DESeqDataSet is the core object used by DESeq2 to store the count data and metadata.
+
+# Create DESeqDataSet object
+
+```{r}
+dds <- DESeqDataSetFromMatrix(countData = count_data,
+                              colData = col_data,
+                              design = ~ condition)
+
+```
+
+countData: The count matrix.
+
+colData: The metadata.
+
+design: The experimental design formula. Here, we are testing for differences between conditions.
+
+4. Preprocessing and Normalization
+
+DESeq2 automatically normalizes the data using the median of ratios method. You can also filter out low-count genes to improve results.
+
+# Filter out genes with very low counts
+
+```{r}
+keep <- rowSums(counts(dds)) >= 10
+dds <- dds[keep,]
+
+```
+
+# Run DESeq2 analysis
+
+```{r}
+dds <- DESeq(dds)
+
+```
+
+5. Extract Results
+
+After running the analysis, extract the results for differentially expressed genes (DEGs).
+
+# Get results for the contrast "Treatment vs Control"
+
+```{r}
+res <- results(dds, contrast = c("condition", "Treatment", "Control"))
+
+```
+
+# Summarize the results
+
+```{r}
+summary(res)
+
+```
+
+res contains log2 fold changes, p-values, and adjusted p-values (FDR) for each gene.
+
+Use summary(res) to get an overview of the number of up- and down-regulated genes.
+
+6. Visualize Results
+
+Visualization is crucial for interpreting the results. Here are some common plots:
+
+MA Plot
+Shows the relationship between mean expression and log2 fold change.
+
+```{r}
+plotMA(res, ylim=c(-2, 2))
+
+```
+
+Volcano Plot
+
+Highlights significant genes based on log2 fold change and p-values.
+
+# Create a volcano plot
+
+```{r}
+res_df <- as.data.frame(res)
+res_df$significant <- res_df$padj < 0.05 & abs(res_df$log2FoldChange) > 1
+
+ggplot(res_df, aes(x=log2FoldChange, y=-log10(padj), color=significant)) +
+  geom_point() +
+  theme_minimal() +
+  labs(title="Volcano Plot", x="Log2 Fold Change", y="-Log10 Adjusted P-value")
+
+```
+
+Heatmap
+Visualizes expression patterns of top DEGs.
+
+# Select top 20 DEGs
+
+```{r}
+top_genes <- head(order(res$padj), 20)
+top_counts <- counts(dds, normalized=TRUE)[top_genes,]
+
+# Plot heatmap
+pheatmap(top_counts, scale="row", clustering_distance_rows="correlation")
+
+```
+
+7. Save Results
+Save the results to a file for further analysis or sharing.
+
+# Write results to a CSV file
+
+```{r}
+write.csv(as.data.frame(res), file="differential_expression_results.csv")
+
+```
+
+8. Advanced Options
+Adding covariates: If you have additional covariates (e.g., batch effects), include them in the design formula: design = ~ batch + condition.
+
+Shrunken log2 fold changes: Use lfcShrink to get more accurate fold change estimates:
+
+```{r}
+res_shrink <- lfcShrink(dds, coef="condition_Treatment_vs_Control", type="apeglm")
+
+```
+
+9. Interpretation
+
+Log2 fold change: Indicates the magnitude and direction of differential expression.
+
+Adjusted p-value (FDR): Controls for multiple testing. Genes with padj < 0.05 are typically considered significant.
+
+# Let us now go through the airway dataset in R
+
+This dataset contains RNA-seq data from airway smooth muscle cells treated with dexamethasone, a synthetic glucocorticoid. 
+We will use the DESeq2 package to identify differentially expressed genes (DEGs) between treated and untreated samples.
+
+## 1. Load the airway library
+
+```{R}
+library(airway)
+
+```
+
+## 2. Load the airway Dataset
+
+The airway dataset is a pre-processed RNA-seq dataset included in the airway package. It contains raw counts and metadata for 8 samples (4 treated with dexamethasone and 4 untreated controls).
+
+```{r}
+data("airway")
+
+```
+
+View the dataset
+
+```{r}
+airway
+
+```
+
+The airway object is a SummarizedExperiment object, which contains:
+
+Count matrix: Accessible with assay(airway).
+
+Metadata: Accessible with colData(airway).
+
+The count matrix
+
+```{r}
+assay(airway)
+
+```
+The metadata
+
+```{r}
+colData(airway)
+
+```
+
+## 3. Extract Count Matrix and Metadata
+
+Extract the count matrix and metadata from the airway object.
+
+Extract the count matrix
+
+```{r}
+count_data <- assay(airway)
+
+```
+
+Extract the metadata
+
+```{r}
+col_data <- colData(airway)
+
+```
+
+View the metadata
+
+```{r}
+col_data
+
+```
+
+The metadata contains information about the samples, including the treatment status (dex column: trt for treated and untrt for untreated).
+
+## 4. Create a DESeqDataSet Object
+
+The DESeqDataSet is the core object used by DESeq2 to store the count data and metadata.
+
+Create DESeqDataSet object
+
+```{r}
+dds <- DESeqDataSetFromMatrix(countData = count_data,
+                              colData = col_data,
+                              design = ~ dex)
+
+```
+
+countData: The count matrix.
+
+colData: The metadata.
+
+design: The experimental design formula. Here, we are testing for differences between treatment groups (dex).
+
+## 5. Preprocessing and Normalization
+
+DESeq2 automatically normalizes the data using the median of ratios method. You can also filter out low-count genes to improve results.
+
+Filter out genes with very low counts
+
+```{r}
+keep <- rowSums(counts(dds)) >= 10
+dds <- dds[keep,]
+
+```
+
+Run DESeq2 analysis
+
+```{r}
+dds <- DESeq(dds)
+
+```
+
+## 6. Extract Results
+
+After running the analysis, extract the results for differentially expressed genes (DEGs).
+
+Get results for the contrast "treated vs untreated"
+
+```{r}
+res <- results(dds, contrast = c("dex", "trt", "untrt"))
+
+```
+
+Summarize the results
+
+```{r}
+summary(res)
+
+```
+
+res contains log2 fold changes, p-values, and adjusted p-values (FDR) for each gene.
+
+Use summary(res) to get an overview of the number of up- and down-regulated genes.
+
+## 7. Visualize Results
+
+Visualization is crucial for interpreting the results. Here are some common plots:
+
+MA Plot
+
+Shows the relationship between mean expression and log2 fold change.
+
+```{r}
+plotMA(res, ylim=c(-2, 2))
+
+```
+
+Volcano Plot
+
+Highlights significant genes based on log2 fold change and p-values.
+Create a volcano plot
+
+```{r}
+res_df <- as.data.frame(res)
+res_df$significant <- res_df$padj < 0.05 & abs(res_df$log2FoldChange) > 1
+
+ggplot(res_df, aes(x=log2FoldChange, y=-log10(padj), color=significant)) +
+  geom_point() +
+  theme_minimal() +
+  labs(title="Volcano Plot", x="Log2 Fold Change", y="-Log10 Adjusted P-value")
+
+```
+
+Heatmap
+
+Visualizes expression patterns of top DEGs.
+Select top 20 DEGs
+
+```{r}
+top_genes <- head(order(res$padj), 20)
+top_counts <- counts(dds, normalized=TRUE)[top_genes,]
+
+# Plot heatmap
+pheatmap(top_counts, scale="row", clustering_distance_rows="correlation")
+
+```
+
+## 8. Save Results
+
+Save the results to a file for further analysis or sharing.
+Write results to a CSV file
+
+```{r}
+write.csv(as.data.frame(res), file="differential_expression_results.csv")
+
+```
+
+
+# Further Reading
+
+DESeq2 documentation: https://bioconductor.org/packages/release/bioc/vignettes/DESeq2/inst/doc/DESeq2.html
+
+RNA-seq analysis best practices: https://www.nature.com/articles/nrg2484
